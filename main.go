@@ -1,5 +1,7 @@
 package main
 
+var expandedKey [176]byte
+
 func main() {
 	//a := [4]byte{1, 2, 3, 4}
 	//keyExpansionCore(&a, 1)
@@ -15,10 +17,10 @@ func main() {
 	encrypt(&message, &key)
 }
 
-func generateKey(bits int) []byte {
+func generateKey(bits int) [16]byte {
 	//TODO: Generate random key
 
-	return []byte{
+	return [16]byte{
 		1, 2, 3, 4,
 		5, 6, 7, 8,
 		9, 10, 11, 12,
@@ -26,46 +28,74 @@ func generateKey(bits int) []byte {
 	}
 }
 
-func encrypt(message *[]byte, key *[]byte) {
-	rounds := 10
+func encrypt(message *[]byte, key *[16]byte) {
 	var state [16]byte
 
 	for i := 0; i < 16; i++ {
 		state[i] = (*message)[i]
 	}
 
-	keyExpansion()
+	rounds := 10
+
+	keyExpansion(key, &expandedKey)
 	addRoundKey(&state, key)
 
 	for i := 0; i < rounds; i++ {
-		stepsEachRound(&state, key, i == rounds-1)
+		stepsEachRound(&state, i)
 	}
 }
 
-func keyExpansion() {
-	//TODO add key expansion functionality
+func keyExpansion(inputKey *[16]byte, expandedKeys *[176]byte) {
+	for i := 0; i < 16; i++ {
+		expandedKeys[i] = inputKey[i]
+	}
+
+	bytesGenerated := 16
+	rconIteration := 1
+	var tmp [4]byte
+
+	for bytesGenerated < 176 {
+		for i := 0; i < 4; i++ {
+			tmp[i] = expandedKeys[i+bytesGenerated-4]
+		}
+		if bytesGenerated%16 == 0 {
+			keyExpansionCore(&tmp, rconIteration)
+			rconIteration++
+		}
+
+		for i := 0; i < 4; i++ {
+			expandedKeys[bytesGenerated] = expandedKeys[bytesGenerated-16] ^ tmp[i]
+			bytesGenerated++
+		}
+	}
 }
 
-func keyExpansionCore(in *[4]byte, i byte) {
+func keyExpansionCore(in *[4]byte, i int) {
 	in[0], in[1], in[2], in[3] = in[1], in[2], in[3], in[0]
 	in[0], in[1], in[2], in[3] = Sbox[in[0]], Sbox[in[1]], Sbox[in[2]], Sbox[in[3]]
+	in[0] ^= Rcon[i]
 }
 
-func addRoundKey(state *[16]byte, roundKey *[]byte) {
+func addRoundKey(state *[16]byte, roundKey *[16]byte) {
 	for i := 0; i < 16; i++ {
-		state[i] ^= (*roundKey)[i]
+		state[i] ^= roundKey[i]
 	}
 }
 
-func stepsEachRound(state *[16]byte, key *[]byte, isFinalRound bool) {
+func stepsEachRound(state *[16]byte, round int) {
 	subBytes(state)
 	shiftRows(state)
 
-	if !isFinalRound {
+	if round == 9 {
 		mixColumns(state)
 	}
 
-	addRoundKey(state, key)
+	var key [16]byte
+	for i := 0; i < 16; i++ {
+		key[i] = expandedKey[16*(round+1)+i]
+	}
+
+	addRoundKey(state, &key)
 }
 
 func subBytes(state *[16]byte) {
