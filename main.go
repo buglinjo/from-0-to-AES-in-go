@@ -1,20 +1,26 @@
 package main
 
+import (
+	"encoding/base64"
+	"encoding/hex"
+	"fmt"
+)
+
 var expandedKey [176]byte
 
 func main() {
-	//a := [4]byte{1, 2, 3, 4}
-	//keyExpansionCore(&a, 1)
-	//fmt.Println(a)
-
 	/**
 	 *
 	 *  TODO: add support of 256 bit cipher
 	 *
 	 */
-	message := []byte("This is the message we will encrypt with AES")
+	message := []byte("This is a message we will encrypt with AES!")
 	key := generateKey(128)
-	encrypt(&message, &key)
+	encryptedMessage := encrypt(&message, &key)
+	fmt.Println("--------------------------------------")
+	fmt.Println(hex.EncodeToString(key[:]))
+	fmt.Println(string(message), hex.EncodeToString(message))
+	fmt.Println(base64.StdEncoding.EncodeToString(encryptedMessage), hex.EncodeToString(encryptedMessage))
 }
 
 func generateKey(bits int) [16]byte {
@@ -28,21 +34,55 @@ func generateKey(bits int) [16]byte {
 	}
 }
 
-func encrypt(message *[]byte, key *[16]byte) {
-	var state [16]byte
+func encrypt(message *[]byte, key *[16]byte) []byte {
+	keyExpansion(key, &expandedKey)
 
-	for i := 0; i < 16; i++ {
-		state[i] = (*message)[i]
+	paddedMessage := addPaddingToMessage(message)
+	var encryptedMessage []byte
+	for i := 0; i < len(paddedMessage); i += 16 {
+		var sliceOfMessage [16]byte
+		for j := 0; j < 16; j++ {
+			sliceOfMessage[j] = paddedMessage[i+j]
+		}
+
+		encrypt16Bytes(&sliceOfMessage, key)
+
+		for j := 0; j < 16; j++ {
+			encryptedMessage = append(encryptedMessage, sliceOfMessage[j])
+		}
 	}
 
+	return encryptedMessage
+}
+
+func encrypt16Bytes(state *[16]byte, key *[16]byte) {
 	rounds := 10
 
-	keyExpansion(key, &expandedKey)
-	addRoundKey(&state, key)
+	addRoundKey(state, key)
 
 	for i := 0; i < rounds; i++ {
-		stepsEachRound(&state, i)
+		stepsEachRound(state, i)
 	}
+}
+
+func addPaddingToMessage(message *[]byte) []byte {
+	originalLen := len(*message)
+	lenOfPaddedMessage := originalLen
+
+	if lenOfPaddedMessage%16 != 0 {
+		lenOfPaddedMessage = ((lenOfPaddedMessage / 16) + 1) * 16
+	}
+
+	var paddedMessage []byte
+	for i := 0; i < lenOfPaddedMessage; i++ {
+		if i >= originalLen {
+			paddedMessage = append(paddedMessage, 0)
+		} else {
+			paddedMessage = append(paddedMessage, (*message)[i])
+		}
+	}
+
+	return paddedMessage
 }
 
 func keyExpansion(inputKey *[16]byte, expandedKeys *[176]byte) {
@@ -85,8 +125,7 @@ func addRoundKey(state *[16]byte, roundKey *[16]byte) {
 func stepsEachRound(state *[16]byte, round int) {
 	subBytes(state)
 	shiftRows(state)
-
-	if round == 9 {
+	if round != 9 {
 		mixColumns(state)
 	}
 
@@ -127,8 +166,8 @@ func mixColumns(state *[16]byte) {
 	var tmpState = [16]byte{}
 	for i := 0; i < 16; i++ {
 		var tmp byte
-		stOffset := (i * 4) % 16
-		mmOffset := (i / 4) * 4
+		stOffset := (i / 4) * 4
+		mmOffset := (i * 4) % 16
 		for j := 0; j < 4; j++ {
 			stIndex := stOffset + j
 			mmIndex := mmOffset + j
